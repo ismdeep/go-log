@@ -1,4 +1,4 @@
-package go_log
+package log
 
 import (
 	"go.uber.org/zap"
@@ -11,27 +11,27 @@ func init() {
 	defer logger.Sync()
 }
 
-func Info(msg string, fields ...interface{}) {
-	logger.Sugar().Infow(msg, fields...)
+func Info(msg string, keysAndValues ...interface{}) {
+	logger.Sugar().Infow(msg, keysAndValues...)
 
 }
 
-func Debug(msg string, fields ...interface{}) {
-	logger.Sugar().Debugw(msg, fields...)
+func Debug(msg string, keysAndValues ...interface{}) {
+	logger.Sugar().Debugw(msg, keysAndValues...)
 }
 
-func Error(msg string, fields ...interface{}) {
-	logger.Sugar().Errorw(msg, fields...)
+func Error(msg string, keysAndValues ...interface{}) {
+	logger.Sugar().Errorw(msg, keysAndValues...)
 }
 
-func Warn(msg string, fields ...interface{}) {
-	logger.Sugar().Warnw(msg, fields...)
+func Warn(msg string, keysAndValues ...interface{}) {
+	logger.Sugar().Warnw(msg, keysAndValues...)
 }
 
-func Panic(msg string, fields ...interface{}) {
-	logger.Sugar().Panicw(msg, fields...)
+func Panic(msg string, keysAndValues ...interface{}) {
+	logger.Sugar().Panicw(msg, keysAndValues...)
 }
 
-func Fatal(msg string, fields ...interface{}) {
-	logger.Sugar().Fatalw(msg, fields...)
+func Fatal(msg string, keysAndValues ...interface{}) {
+	logger.Sugar().Fatalw(msg, keysAndValues...)
 }

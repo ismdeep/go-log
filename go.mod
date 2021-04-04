@@ -1,4 +1,4 @@
-module github.com/ismdeep/go-log
+module github.com/ismdeep/log
 
 go 1.15
 
