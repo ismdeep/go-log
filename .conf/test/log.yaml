@@ -1,0 +1,6 @@
+level: INFO
+encoding: json
+outputPaths:
+  - stdout
+errorOutputPaths:
+  - stderr
