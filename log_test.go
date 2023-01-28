@@ -1,13 +1,20 @@
 package log
 
 import (
-	"errors"
 	"testing"
 )
 
-func TestInfo(t *testing.T) {
-	Info("Hello Info", "msg", "Hello World.", "val", 1)
-	Debug("Hello Debug", "msg", "Hello World.", "val", 1)
-	Warn("Hello Warn", "msg", "Hello World.", "val", 1)
-	Error("Hello Error", String("msg", "Hello World."), Any("val", 1), FieldErr(errors.New("error msg")))
+func TestWithContext(t *testing.T) {
+	ctx := NewTraceContext("07a313fc-9ee9-11ed-b3d1-33fcf0cd96d8")
+	WithContext(ctx).Info("hello")
+}
+
+func TestNew(t *testing.T) {
+	logger, err := New("console://[stdout]?level=debug&time_encoder=rfc3339&caller_encoder=full&trace_level=error")
+	if err != nil {
+		panic(err)
+	}
+
+	ctx := NewTraceContext("07a313fc-9ee9-11ed-b3d1-33fcf0cd96d8")
+	logger.WithContext(ctx).Info("hello")
 }

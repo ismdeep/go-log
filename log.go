@@ -1,95 +1,167 @@
 package log
 
 import (
-	"encoding/json"
+	"context"
+	"fmt"
+	"math"
+	"os"
+	"strings"
 
-	"github.com/ismdeep/config"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"gopkg.in/natefinch/lumberjack.v2"
 )
 
-type configModel struct {
-	Level            string   `json:"level"`
-	Encoding         string   `json:"encoding"`
-	OutputPaths      []string `json:"outputPaths"`
-	ErrorOutputPaths []string `json:"errorOutputPaths"`
+// TraceIDKeyType trace id key type
+type TraceIDKeyType string
+
+const (
+	// TraceIDKey trace id key
+	TraceIDKey TraceIDKeyType = "traceId"
+)
+
+type Logger struct {
+	ZapLogger *zap.Logger
 }
 
-func loadConfig() configModel {
-	var conf configModel
-	if err := config.Load("log", &conf); err == nil {
-		return conf
-	}
+// DefaultLogger default logger
+var DefaultLogger *Logger
 
-	return configModel{
-		Level:            "DEBUG",
-		Encoding:         "console",
-		OutputPaths:      []string{"stdout"},
-		ErrorOutputPaths: []string{"stderr"},
-	}
-}
-
-var logger *zap.Logger
-
+// 初始化日志配置
 func init() {
-	conf := loadConfig()
-	raw, err := json.Marshal(conf)
+	Init("console://[stdout]?level=debug&time_encoder=rfc3339&caller_encoder=full&trace_level=error")
+}
+
+func Init(dsn string) {
+	DefaultLogger, _ = New(dsn)
+}
+
+func New(dsn string) (*Logger, error) {
+	cfg, err := ParseConfig(dsn)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
-	var cfg zap.Config
-	if err := json.Unmarshal(raw, &cfg); err != nil {
-		panic(err)
+	var logLevel zapcore.Level
+	switch cfg.Parameters.Level {
+	case "debug":
+		logLevel = zap.DebugLevel
+	case "info":
+		logLevel = zap.InfoLevel
+	case "warn":
+		logLevel = zap.WarnLevel
+	case "error":
+		logLevel = zap.ErrorLevel
+	}
+	var multiWriteSyncer []zapcore.WriteSyncer
+	for _, output := range cfg.Outputs {
+		switch output {
+		case "stdout":
+			multiWriteSyncer = append(multiWriteSyncer, zapcore.AddSync(os.Stdout))
+		case "file":
+			multiWriteSyncer = append(multiWriteSyncer, zapcore.AddSync(&lumberjack.Logger{
+				Filename:   cfg.Parameters.FilePath,
+				MaxSize:    1024,
+				MaxAge:     1,
+				MaxBackups: math.MaxInt64,
+				Compress:   true,
+			}))
+		}
 	}
 
-	cfg.EncoderConfig = zap.NewProductionEncoderConfig()
-	cfg.EncoderConfig.EncodeTime = zapcore.RFC3339TimeEncoder
-	cfg.DisableCaller = true
-	cfg.DisableStacktrace = false
-
-	logger, err = cfg.Build()
-	if err != nil {
-		panic(err)
+	// 时间格式
+	zapCfg := zap.NewProductionEncoderConfig()
+	switch strings.ToLower(cfg.Parameters.TimeEncoder) {
+	case "iso08601":
+		zapCfg.EncodeTime = zapcore.ISO8601TimeEncoder
+	case "rfc3339":
+		zapCfg.EncodeTime = zapcore.RFC3339TimeEncoder
+	case "rfc3339nano":
+		zapCfg.EncodeTime = zapcore.RFC3339NanoTimeEncoder
+	case "epoch":
+		zapCfg.EncodeTime = zapcore.EpochTimeEncoder
+	case "epoch_millis":
+		zapCfg.EncodeTime = zapcore.EpochMillisTimeEncoder
+	case "epoch_nanos":
+		zapCfg.EncodeTime = zapcore.EpochNanosTimeEncoder
+	default:
+		zapCfg.EncodeTime = zapcore.RFC3339TimeEncoder
 	}
 
-	defer func(logger *zap.Logger) {
-		_ = logger.Sync()
-	}(logger)
+	// Caller格式
+	switch strings.ToLower(cfg.Parameters.CallerEncoder) {
+	case "short":
+		zapCfg.EncodeCaller = zapcore.ShortCallerEncoder
+	case "full":
+		zapCfg.EncodeCaller = zapcore.FullCallerEncoder
+	}
+
+	var encoder zapcore.Encoder
+	switch cfg.Encoder {
+	case "console":
+		encoder = zapcore.NewConsoleEncoder(zapCfg)
+	case "json":
+		encoder = zapcore.NewJSONEncoder(zapCfg)
+	default:
+		panic(fmt.Errorf("unsupport log encoder: %v", cfg.Encoder))
+	}
+
+	// 配置信息
+	var options []zap.Option
+	options = append(options, zap.AddCaller()) // 添加调用者信息
+
+	// 级别日志，打印堆栈
+	switch cfg.Parameters.TraceLevel {
+	case "error":
+		options = append(options, zap.AddStacktrace(zap.ErrorLevel))
+	case "warn":
+		options = append(options, zap.AddStacktrace(zap.WarnLevel))
+	case "info":
+		options = append(options, zap.AddStacktrace(zap.InfoLevel))
+	case "debug":
+		options = append(options, zap.AddStacktrace(zap.DebugLevel))
+	}
+
+	// 开启文件及行号
+	options = append(options, zap.Development())
+
+	// 初始化配置
+	logger := zap.New(
+		zapcore.NewCore(
+			encoder, // json格式日志（ELK渲染收集）
+			zapcore.NewMultiWriteSyncer(multiWriteSyncer...), // 打印到控制台和文件
+			logLevel, // 日志级别
+		),
+		options...,
+	)
+
+	return &Logger{
+		ZapLogger: logger,
+	}, nil
 }
 
-func Info(msg string, keysAndValues ...interface{}) {
-	logger.Sugar().Infow(msg, keysAndValues...)
+// WithContext 从指定的context返回一个zap实例（关键方法）
+func WithContext(ctx context.Context) *zap.Logger {
+	return DefaultLogger.WithContext(ctx)
 }
 
-func Debug(msg string, keysAndValues ...interface{}) {
-	logger.Sugar().Debugw(msg, keysAndValues...)
+func (receiver *Logger) WithContext(ctx context.Context) *zap.Logger {
+	if v := ctx.Value(TraceIDKey); v != "" {
+		if s, ok := v.(string); ok {
+			return receiver.ZapLogger.With(zap.String("traceId", s))
+		}
+	}
+
+	if v := ctx.Value(string(TraceIDKey)); v != "" {
+		if s, ok := v.(string); ok {
+			return receiver.ZapLogger.With(zap.String("traceId", s))
+		}
+	}
+
+	return receiver.ZapLogger
 }
 
-func Error(msg string, keysAndValues ...interface{}) {
-	logger.Sugar().Errorw(msg, keysAndValues...)
-}
-
-func Warn(msg string, keysAndValues ...interface{}) {
-	logger.Sugar().Warnw(msg, keysAndValues...)
-}
-
-func Panic(msg string, keysAndValues ...interface{}) {
-	logger.Sugar().Panicw(msg, keysAndValues...)
-}
-
-func Fatal(msg string, keysAndValues ...interface{}) {
-	logger.Sugar().Fatalw(msg, keysAndValues...)
-}
-
-func String(key string, value string) zap.Field {
-	return zap.String(key, value)
-}
-
-func FieldErr(err error) zap.Field {
-	return zap.Error(err)
-}
-
-func Any(key string, value interface{}) zap.Field {
-	return zap.Any(key, value)
+// NewTraceContext new context with a traceID
+func NewTraceContext(traceID string) context.Context {
+	return context.WithValue(context.Background(), TraceIDKey, traceID)
 }
