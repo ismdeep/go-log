@@ -18,7 +18,7 @@ func TestParseConfig(t *testing.T) {
 		{
 			name: "",
 			args: args{
-				dsn: "console://[stdout,file]?level=debug&trace_level=error&time_encoder=rfc3339&caller_encoder=full&file_path=/tmp/server.log",
+				dsn: "console://[stdout,file]?level=debug&trace_level=error&time_encoder=rfc3339&caller_encoder=short&file_path=/tmp/server.log",
 			},
 			want: &Config{
 				Encoder: "console",
@@ -33,7 +33,7 @@ func TestParseConfig(t *testing.T) {
 					Level:         "debug",
 					TraceLevel:    "error",
 					TimeEncoder:   "rfc3339",
-					CallerEncoder: "full",
+					CallerEncoder: "short",
 					FilePath:      "/tmp/server.log",
 				},
 			},
