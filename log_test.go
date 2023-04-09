@@ -1,6 +1,7 @@
 package log
 
 import (
+	"context"
 	"testing"
 )
 
@@ -17,4 +18,8 @@ func TestNew(t *testing.T) {
 
 	ctx := NewTraceContext("07a313fc-9ee9-11ed-b3d1-33fcf0cd96d8")
 	logger.WithContext(ctx).Info("hello")
+}
+
+func TestInfo(t *testing.T) {
+	WithContext(context.TODO()).Info("hello")
 }
